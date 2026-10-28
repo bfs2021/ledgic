@@ -63,6 +63,7 @@ async def handle(ctx: StageContext, run: RunRow) -> Transition:
         lines = await inv_repo.lines(conn, run.invoice_id)
 
     pls = {str(pl["id"]): pl for pl in (await master.po_lines(conn, po_id) if po_id else [])}
+    billed = await master.invoiced_qty_by_po_line(conn, po_id, run.invoice_id) if po_id else {}
     vendor = await master.get_vendor(conn, str(inv["vendor_id"])) if inv["vendor_id"] else None
     item_ids = [str(ln["item_id"]) for ln in lines if ln["item_id"]]
     cps = await master.contract_prices(conn, str(inv["vendor_id"]), item_ids) if inv["vendor_id"] else {}
@@ -80,6 +81,7 @@ async def handle(ctx: StageContext, run: RunRow) -> Transition:
                 po_unit_price=pl["unit_price"] if pl else None,
                 po_qty=pl["qty"] if pl else None,
                 grn_qty=pl["grn_qty"] if pl else None,
+                prior_invoiced_qty=(dec(billed.get(str(pl["id"]))) or Decimal(0)) if pl else Decimal(0),
                 contract_prices=tuple(cps.get(str(ln["item_id"]), ())) if ln["item_id"] else (),
                 invoice_line_id=ln["sid"],
                 po_line_id=str(pl["id"]) if pl else None,
@@ -116,6 +118,7 @@ async def handle(ctx: StageContext, run: RunRow) -> Transition:
                 "allowed_amount": tol.allowed if tol else None,
                 "verdict": lm.verdict,
                 "note": lm.note,
+                "payable_qty": lm.qty.payable_qty if lm.qty else None,
             }
         )
     await inv_repo.replace_match(

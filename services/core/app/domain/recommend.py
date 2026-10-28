@@ -150,9 +150,11 @@ def recommend(
             _note(conf, "purchase order terms"),
         )
 
-    # Rule 3: quantity mismatch where less was received than invoiced.
+    # Rule 3: quantity mismatch where less was received than invoiced. Not when other invoices already billed
+    # the receipt: that is a possible re-bill, not a short delivery, so a person decides.
     short_received = [ln for ln in failing if ln.qty is not None and ln.qty.over_receipt]
-    if match.verdict == "qty_mismatch" and short_received:
+    rebilled = any(ln.qty is not None and ln.qty.prior_invoiced > 0 and not ln.qty.passes for ln in failing)
+    if match.verdict == "qty_mismatch" and short_received and not rebilled:
         hold = cents(sum((ln.hold_amount for ln in failing), ZERO))
         conf = QTY_CONFIDENCE
         q = short_received[0].qty

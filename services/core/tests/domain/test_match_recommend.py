@@ -197,6 +197,24 @@ def test_contract_variance_without_full_receipt_has_no_recommendation() -> None:
     assert recommend(m, invoice_total="824.00") is None
 
 
+def test_rebilled_receipt_routes_to_qty_exception() -> None:
+    line = dict(po_unit_price="50.00", po_qty="10", grn_qty="10")
+    first = match_invoice(
+        [MatchLineInput.of(1, "Butter 36ct", "10", "50.00", "500.00", **line)], invoice_date=INVOICE_DATE
+    )
+    assert first.is_clean
+    again = match_invoice(
+        [MatchLineInput.of(1, "Butter 36ct", "10", "50.00", "500.00", prior_invoiced_qty="10", **line)],
+        invoice_date=INVOICE_DATE,
+    )
+    assert not again.is_clean and again.verdict == "qty_mismatch"
+    assert again.lines[0].verdict == "qty_over_receipt"
+    assert again.reason == "butter invoiced 10, received 10, 10 already invoiced"
+    assert again.lines[0].hold_amount == Decimal("500.00")
+    # A possible re-bill is not a short delivery: no short-pay recommendation, a person decides.
+    assert recommend(again, invoice_total="500.00") is None
+
+
 def test_rule3_qty_short_receipt() -> None:
     lines = [
         MatchLineInput.of(

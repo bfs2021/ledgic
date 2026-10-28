@@ -16,6 +16,7 @@ class QtyResult:
     invoiced: Decimal
     received: Decimal | None  # None for two-way vendors
     ordered: Decimal | None
+    prior_invoiced: Decimal  # already billed against this PO line by other invoices
     max_orderable: Decimal | None
     over_receipt: bool
     over_order: bool
@@ -41,10 +42,13 @@ def qty_check(
     po_qty: Numberish | None,
     over_receipt_allowance: Numberish = ZERO,
     match_mode: MatchMode = "three_way",
+    prior_invoiced: Numberish = ZERO,
 ) -> QtyResult:
-    """invoiced ≤ received AND invoiced ≤ po_qty × (1 + allowance). Two-way vendors skip the GRN check.
+    """invoiced ≤ received − prior AND invoiced ≤ po_qty × (1 + allowance) − prior, where prior is what other
+    invoices already billed against the same PO line. Two-way vendors skip the GRN check.
     In three-way mode a missing GRN means nothing has been received yet (received = 0)."""
     inv = D(invoiced)
+    prior = max(D(prior_invoiced), ZERO)
     ordered = D(po_qty) if po_qty is not None else None
     max_orderable = ordered * (1 + D(over_receipt_allowance)) if ordered is not None else None
     received: Decimal | None
@@ -53,28 +57,33 @@ def qty_check(
         over_receipt = False
     else:
         received = D(grn_received) if grn_received is not None else ZERO
-        over_receipt = inv > received
-    over_order = max_orderable is not None and inv > max_orderable
+        over_receipt = inv > received - prior
+    over_order = max_orderable is not None and inv > max_orderable - prior
 
     payable = inv
     if received is not None:
-        payable = min(payable, received)
+        payable = min(payable, received - prior)
     if max_orderable is not None:
-        payable = min(payable, max_orderable)
+        payable = min(payable, max_orderable - prior)
 
     parts: list[str] = []
     if ordered is not None:
         parts.append(f"ordered {fmt_qty(ordered)}")
     if match_mode == "two_way":
+        if prior:
+            parts.append(f"already invoiced {fmt_qty(prior)}")
         parts.append(f"invoiced {fmt_qty(inv)}")
         parts.append("two-way, no receipt check")
     else:
         parts.append(f"received {fmt_qty(grn_received)}" if grn_received is not None else "no receipt")
+        if prior:
+            parts.append(f"already invoiced {fmt_qty(prior)}")
         parts.append(f"invoiced {fmt_qty(inv)}")
     return QtyResult(
         invoiced=inv,
         received=received,
         ordered=ordered,
+        prior_invoiced=prior,
         max_orderable=max_orderable,
         over_receipt=over_receipt,
         over_order=over_order,

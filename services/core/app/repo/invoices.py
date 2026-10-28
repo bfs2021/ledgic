@@ -284,12 +284,14 @@ async def replace_match(
         "allowed_amount",
         "verdict",
         "note",
+        "payable_qty",
     )
     async with conn.cursor() as cur:
         await cur.executemany(
             "insert into match_line_results (match_result_id, invoice_line_id, po_line_id, grn_qty, expected_unit_price, "
-            " expected_source, contract_price_id, expected_amount, delta_amount, delta_pct, allowed_amount, verdict, note) "
-            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            " expected_source, contract_price_id, expected_amount, delta_amount, delta_pct, allowed_amount, verdict, note, "
+            " payable_qty) "
+            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             [(mr_id, *(r.get(c) for c in cols)) for r in line_rows],
         )
     return mr_id

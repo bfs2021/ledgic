@@ -54,6 +54,7 @@ class MatchLineInput:
     po_unit_price: Decimal | None = None  # None (and po_qty None) → line not paired to a PO line
     po_qty: Decimal | None = None
     grn_qty: Decimal | None = None  # Σ grn_lines.qty_received for the PO line
+    prior_invoiced_qty: Decimal = ZERO  # already billed against the PO line by other invoices
     contract_prices: tuple[ContractPrice, ...] = ()
     invoice_line_id: str | None = None
     po_line_id: str | None = None
@@ -70,6 +71,7 @@ class MatchLineInput:
         po_unit_price: Numberish | None = None,
         po_qty: Numberish | None = None,
         grn_qty: Numberish | None = None,
+        prior_invoiced_qty: Numberish = ZERO,
         contract_prices: Sequence[ContractPrice] = (),
         **kw: str | None,
     ) -> MatchLineInput:
@@ -83,6 +85,7 @@ class MatchLineInput:
             po_unit_price=opt(po_unit_price),
             po_qty=opt(po_qty),
             grn_qty=opt(grn_qty),
+            prior_invoiced_qty=D(prior_invoiced_qty),
             contract_prices=tuple(contract_prices),
             **kw,
         )
@@ -161,6 +164,10 @@ class MatchResult:
         return tuple(ln for ln in self.lines if ln.failures)
 
 
+def _billed(q: QtyResult) -> str:
+    return f", {fmt_qty(q.prior_invoiced)} already invoiced" if q.prior_invoiced else ""
+
+
 def match_line(
     line: MatchLineInput,
     *,
@@ -196,7 +203,9 @@ def match_line(
     else:  # paired by qty only with no price reference: bill at invoice price
         expected_unit, source = line.unit_price, "po"
     tol = line_tolerance(expected_unit, line.qty, line.amount, pct, abs_amount)
-    q = qty_check(line.qty, line.grn_qty, line.po_qty, over_receipt_allowance, match_mode)
+    q = qty_check(
+        line.qty, line.grn_qty, line.po_qty, over_receipt_allowance, match_mode, line.prior_invoiced_qty
+    )
 
     failures: set[str] = set()
     if not tol.passes:
@@ -226,9 +235,9 @@ def match_line(
     elif "price" in failures:
         reason = f"{short} over {'contract' if source == 'contract' else 'PO'}"
     elif q.over_receipt:
-        reason = f"{short} invoiced {fmt_qty(q.invoiced)}, received {fmt_qty(q.received or ZERO)}"
+        reason = f"{short} invoiced {fmt_qty(q.invoiced)}, received {fmt_qty(q.received or ZERO)}{_billed(q)}"
     elif q.over_order:
-        reason = f"{short} invoiced {fmt_qty(q.invoiced)}, ordered {fmt_qty(q.ordered or ZERO)}"
+        reason = f"{short} invoiced {fmt_qty(q.invoiced)}, ordered {fmt_qty(q.ordered or ZERO)}{_billed(q)}"
 
     return LineMatch(
         line.line_no,
